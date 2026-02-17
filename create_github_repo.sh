@@ -1,66 +1,126 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if ! command -v curl >/dev/null 2>&1; then
-  echo "Error: curl is required." >&2
-  exit 1
-fi
-if ! command -v git >/dev/null 2>&1; then
-  echo "Error: git is required." >&2
-  exit 1
-fi
-if ! command -v jq >/dev/null 2>&1; then
-  echo "Error: jq is required." >&2
-  exit 1
-fi
+usage() {
+  cat <<'USAGE'
+用法:
+  ./create_github_repo.sh <repo-name> [public|private] [description]
 
-if [[ $# -lt 1 ]]; then
-  echo "Usage: $0 <repo-name> [public|private]"
-  echo "Example: $0 my-new-repo public"
-  exit 1
-fi
+示例:
+  ./create_github_repo.sh my-new-repo public
+  ./create_github_repo.sh my-new-repo private "用于测试的仓库"
+USAGE
+}
 
-REPO_NAME="$1"
-VISIBILITY="${2:-public}"
-if [[ "$VISIBILITY" != "public" && "$VISIBILITY" != "private" ]]; then
-  echo "Error: visibility must be 'public' or 'private'." >&2
-  exit 1
-fi
+require_cmd() {
+  local cmd="$1"
+  if ! command -v "$cmd" >/dev/null 2>&1; then
+    echo "Error: $cmd is required." >&2
+    exit 1
+  fi
+}
 
-if [[ -z "${GITHUB_TOKEN:-}" ]]; then
-  echo "Error: GITHUB_TOKEN is not set." >&2
-  echo "Create a personal access token with 'repo' scope and export it before running this script." >&2
-  exit 1
-fi
+validate_context() {
+  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "Error: current directory is not a git repository." >&2
+    exit 1
+  fi
 
-PRIVATE_FLAG=false
-if [[ "$VISIBILITY" == "private" ]]; then
-  PRIVATE_FLAG=true
-fi
+  local branch
+  branch="$(git branch --show-current)"
+  if [[ -z "$branch" ]]; then
+    echo "Error: unable to detect current branch." >&2
+    exit 1
+  fi
+}
 
-response=$(curl -sS -X POST \
-  -H "Accept: application/vnd.github+json" \
-  -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-  https://api.github.com/user/repos \
-  -d "{\"name\":\"${REPO_NAME}\",\"private\":${PRIVATE_FLAG}}")
+parse_args() {
+  if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+    usage
+    exit 0
+  fi
 
-repo_url=$(jq -r '.clone_url // empty' <<<"$response")
-html_url=$(jq -r '.html_url // empty' <<<"$response")
-message=$(jq -r '.message // empty' <<<"$response")
+  if [[ $# -lt 1 || $# -gt 3 ]]; then
+    usage
+    exit 1
+  fi
 
-if [[ -z "$repo_url" ]]; then
-  echo "Failed to create repository: ${message:-Unknown error}" >&2
-  echo "$response" >&2
-  exit 1
-fi
+  REPO_NAME="$1"
+  VISIBILITY="${2:-public}"
+  DESCRIPTION="${3:-}"
 
-if git remote get-url origin >/dev/null 2>&1; then
-  git remote set-url origin "$repo_url"
-else
-  git remote add origin "$repo_url"
-fi
+  if [[ "$VISIBILITY" != "public" && "$VISIBILITY" != "private" ]]; then
+    echo "Error: visibility must be 'public' or 'private'." >&2
+    exit 1
+  fi
 
-git push -u origin "$(git branch --show-current)"
+  if [[ -z "${GITHUB_TOKEN:-}" ]]; then
+    echo "Error: GITHUB_TOKEN is not set." >&2
+    echo "Hint: create a token with 'repo' scope and run: export GITHUB_TOKEN=your_token" >&2
+    exit 1
+  fi
+}
 
-echo "Repository created: $html_url"
-echo "Remote 'origin' set to: $repo_url"
+create_repo() {
+  local private_flag payload
+  private_flag=false
+  [[ "$VISIBILITY" == "private" ]] && private_flag=true
+
+  payload="$(jq -n \
+    --arg name "$REPO_NAME" \
+    --arg description "$DESCRIPTION" \
+    --argjson private "$private_flag" \
+    '{name: $name, description: $description, private: $private}')"
+
+  RESPONSE="$(curl -fsS -X POST \
+    -H "Accept: application/vnd.github+json" \
+    -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+    -H "X-GitHub-Api-Version: 2022-11-28" \
+    https://api.github.com/user/repos \
+    -d "$payload" 2>/dev/null || true)"
+
+  REPO_URL="$(jq -r '.clone_url // empty' <<<"$RESPONSE")"
+  HTML_URL="$(jq -r '.html_url // empty' <<<"$RESPONSE")"
+
+  if [[ -z "$REPO_URL" ]]; then
+    local message errors
+    message="$(jq -r '.message // "Unknown error"' <<<"$RESPONSE")"
+    errors="$(jq -r '.errors[]?.message? // empty' <<<"$RESPONSE")"
+
+    echo "Failed to create repository: $message" >&2
+    if [[ -n "$errors" ]]; then
+      echo "Details: $errors" >&2
+    fi
+    echo "Raw response: $RESPONSE" >&2
+    exit 1
+  fi
+}
+
+set_remote_and_push() {
+  local branch
+  branch="$(git branch --show-current)"
+
+  if git remote get-url origin >/dev/null 2>&1; then
+    git remote set-url origin "$REPO_URL"
+  else
+    git remote add origin "$REPO_URL"
+  fi
+
+  git push -u origin "$branch"
+}
+
+main() {
+  require_cmd curl
+  require_cmd git
+  require_cmd jq
+
+  parse_args "$@"
+  validate_context
+  create_repo
+  set_remote_and_push
+
+  echo "Repository created: $HTML_URL"
+  echo "Remote 'origin' set to: $REPO_URL"
+}
+
+main "$@"
