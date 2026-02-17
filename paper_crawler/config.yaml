@@ -1,0 +1,43 @@
+# Database Configuration
+database:
+  type: sqlite  # Options: sqlite, mysql, postgresql
+  sqlite:
+    path: papers.db
+  mysql:
+    host: localhost
+    port: 3306
+    user: root
+    password: password
+    database: papers
+  postgresql:
+    host: localhost
+    port: 5432
+    user: postgres
+    password: password
+    database: papers
+
+# Export Configuration
+export:
+  excel_path: output/papers.xlsx
+  json_path: output/papers.json
+  csv_path: output/papers.csv
+  pdf_dir: output/pdfs
+
+# Scraper Configuration
+scraper:
+  # Delay between requests (seconds)
+  delay_min: 2
+  delay_max: 5
+  # Maximum retries for failed requests
+  max_retries: 3
+  # Timeout for requests (seconds)
+  timeout: 30
+  # Download PDFs
+  download_pdf: true
+  # Maximum papers to fetch per query
+  max_results: 50
+
+# Logging
+logging:
+  level: INFO  # DEBUG, INFO, WARNING, ERROR
+  file: logs/crawler.log
