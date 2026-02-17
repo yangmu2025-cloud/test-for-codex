@@ -31,3 +31,60 @@ export GITHUB_TOKEN=你的token
 ```
 
 脚本执行成功后会输出新仓库地址，并完成当前分支推送。
+
+## 如何添加 GITHUB_TOKEN
+
+### 1) 在 GitHub 创建 Token
+
+1. 登录 GitHub
+2. 打开 `Settings` → `Developer settings` → `Personal access tokens` → `Tokens (classic)`
+3. 点击 **Generate new token (classic)**
+4. 勾选权限：`repo`（创建和推送私有/公开仓库建议使用）
+5. 生成后复制 token（只会显示一次）
+
+> 也可以使用 Fine-grained token，但请确保对目标仓库具备可创建/写入权限。
+
+### 2) 临时添加到当前终端会话（推荐先测试）
+
+```bash
+export GITHUB_TOKEN='ghp_xxx你的token'
+```
+
+验证是否生效：
+
+```bash
+echo "$GITHUB_TOKEN" | head -c 10
+```
+
+### 3) 永久生效（Linux/macOS）
+
+把下面一行写入 `~/.bashrc` 或 `~/.zshrc`：
+
+```bash
+export GITHUB_TOKEN='ghp_xxx你的token'
+```
+
+然后执行：
+
+```bash
+source ~/.bashrc
+# 或 source ~/.zshrc
+```
+
+### 4) Windows PowerShell（当前会话）
+
+```powershell
+$env:GITHUB_TOKEN="ghp_xxx你的token"
+```
+
+### 5) 配置后执行脚本
+
+```bash
+./create_github_repo.sh 你的新仓库名 public
+```
+
+如果仍提示 `GITHUB_TOKEN is not set`，请确认：
+
+- 你在**同一个终端会话**里执行了 `export`
+- 变量名拼写必须是 `GITHUB_TOKEN`
+- token 没有多余空格或换行
